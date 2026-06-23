@@ -1,0 +1,28 @@
+name: CI
+
+# PLAN.md 0단계 ⑥: 이 워크플로우를 main branch protection의 required status check로 연결한다.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: ruff (lint)
+        run: ruff check .
+      - name: ruff (format check)
+        run: ruff format --check .
+      - name: mypy
+        run: mypy substitue_doll tests
+      - name: pytest
+        run: pytest
