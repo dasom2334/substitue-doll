@@ -34,6 +34,9 @@ chroma/
 *.faiss
 *.index
 
+# Claude Code 개인 설정 (프로젝트 공용 .claude/settings.json만 커밋)
+.claude/settings.local.json
+
 # Editors / OS
 .idea/
 .vscode/
