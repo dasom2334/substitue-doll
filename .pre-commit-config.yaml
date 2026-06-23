@@ -1,0 +1,30 @@
+# 커밋 게이트(CLAUDE.md §1): ruff + mypy + pytest 가 전부 통과해야 커밋된다.
+# 로컬 venv 도구를 그대로 쓰도록 system 훅으로 둔다(게이트와 동일 버전 보장, 네트워크 불필요).
+# 사용 전 venv 활성화 필요: `source .venv/bin/activate` 후 `pre-commit install`.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-lint
+        name: ruff (lint)
+        entry: ruff check
+        language: system
+        types: [python]
+        require_serial: true
+      - id: ruff-format
+        name: ruff (format --check)
+        entry: ruff format --check
+        language: system
+        types: [python]
+        require_serial: true
+      - id: mypy
+        name: mypy
+        entry: mypy substitue_doll tests
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: pytest
+        name: pytest
+        entry: pytest
+        language: system
+        pass_filenames: false
+        always_run: true
