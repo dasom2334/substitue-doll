@@ -9,7 +9,6 @@
     ],
     "deny": [
       "Bash(rm:*)",
-      "Bash(git push:*)",
       "Edit(.env*)"
     ]
   }
