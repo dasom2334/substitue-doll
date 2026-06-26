@@ -24,6 +24,19 @@ env/
 htmlcov/
 .tox/
 
+# Project data — 원본 대화/기록·정제 저장소·벡터 인덱스는 절대 커밋하지 않는다 (CLAUDE.md §4·§6)
+# (특정 메신저 포맷에 한정하지 않음 — 모든 원본 대화/기록)
+data/
+*.sqlite3
+*.db
+.chroma/
+chroma/
+*.faiss
+*.index
+
+# Claude Code 개인 설정 (프로젝트 공용 .claude/settings.json만 커밋)
+.claude/settings.local.json
+
 # Editors / OS
 .idea/
 .vscode/

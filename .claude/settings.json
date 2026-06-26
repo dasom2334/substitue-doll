@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git push:*)",
+      "Bash(npm test)",
+      "Bash(ruff:*)",
+      "Bash(pytest:*)"
+    ],
+    "deny": [
+      "Bash(rm:*)",
+      "Edit(.env*)"
+    ]
+  }
+}
