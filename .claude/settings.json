@@ -12,5 +12,24 @@
       "Bash(rm:*)",
       "Edit(.env*)"
     ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git push:*)",
+            "command": "bash .claude/hooks/review-reminder.sh"
+          },
+          {
+            "type": "command",
+            "if": "Bash(gh pr create:*)",
+            "command": "bash .claude/hooks/review-reminder.sh"
+          }
+        ]
+      }
+    ]
   }
 }
