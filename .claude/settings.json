@@ -20,13 +20,7 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(git push:*)",
-            "command": "bash .claude/hooks/review-reminder.sh"
-          },
-          {
-            "type": "command",
-            "if": "Bash(gh pr create:*)",
-            "command": "bash .claude/hooks/review-reminder.sh"
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/review-reminder.sh\""
           }
         ]
       }
