@@ -14,17 +14,22 @@ import re
 
 from substitue_doll.core.extraction import ExtractedEntry
 
+# ReDoS 방지: 가변 공백 매처가 겹치지 않도록 `\s` 대신 리터럴 `[ ]`만 쓰고,
+# `_TIME` 선행에 가변 공백을 두지 않는다(인접 `\s+`/`\s*`와 겹치면 백트래킹 폭발).
 _DATE = r"\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}"
-_TIME = r"(?:오전|오후)?\s*\d{1,2}:\d{2}"
-_TS = rf"{_DATE}(?:\s+{_TIME})?"
+_TIME = r"(?:(?:오전|오후)[ ]?)?\d{1,2}:\d{2}"
+_TS = rf"{_DATE}(?:[ ]+{_TIME})?"
 
 # 1) "타임스탬프, 화자 : 텍스트"
-_TS_SPEAKER = re.compile(rf"^(?P<ts>{_TS})\s*,\s*(?P<speaker>[^:,]{{1,30}}?)\s*:\s*(?P<text>.+)$")
+_TS_SPEAKER = re.compile(
+    rf"^(?P<ts>{_TS})[ ]*,[ ]*(?P<speaker>[^:,]{{1,30}}?)[ ]*:[ ]*(?P<text>.+)$"
+)
 # 2) "[화자] (선택 타임스탬프) 텍스트"
-_BRACKET = re.compile(r"^\[(?P<speaker>[^\]]{1,30})\]\s*(?P<rest>.+)$")
-_LEADING_TS = re.compile(rf"^(?P<ts>{_TS})\s+(?P<text>.+)$")
-# 3) "화자: 텍스트" (단순)
-_SIMPLE = re.compile(r"^(?P<speaker>[^:/\s][^:/]{0,19})\s*:\s*(?P<text>.+)$")
+_BRACKET = re.compile(r"^\[(?P<speaker>[^\]]{1,30})\][ ]*(?P<rest>.+)$")
+_LEADING_TS = re.compile(rf"^(?P<ts>{_TS})[ ]+(?P<text>.+)$")
+# 3) "화자: 텍스트" (단순). speaker에 공백 불허 + 콜론 뒤 `/` 차단 →
+#    "오늘은 정말: ..."(평문 문장)·"http://..."(URL) 오매칭 방지.
+_SIMPLE = re.compile(r"^(?P<speaker>[^\s:/]{1,20})[ ]*:[ ]*(?!/)(?P<text>.+)$")
 
 
 class RuleExtractor:

@@ -65,3 +65,29 @@ def test_consecutive_plain_lines_grouped() -> None:
     assert len(entries) == 1
     assert entries[0].source == "plain"
     assert entries[0].text == "첫 줄\n둘째 줄"
+
+
+def test_url_not_mistaken_as_structured() -> None:
+    # "http://..."가 화자 라벨로 오인되면 안 된다(speaker="http").
+    entries = RuleExtractor().extract("http://example.com 봐봐")
+    assert entries == [ExtractedEntry(text="http://example.com 봐봐", order=0, source="plain")]
+
+
+def test_colon_sentence_not_mistaken_as_structured() -> None:
+    # 공백이 든 평문 문장은 화자 라벨로 오인되면 안 된다.
+    entries = RuleExtractor().extract("오늘은 정말: 힘든 하루였어")
+    assert entries == [ExtractedEntry(text="오늘은 정말: 힘든 하루였어", order=0, source="plain")]
+
+
+def test_long_whitespace_line_no_redos() -> None:
+    # ReDoS 회귀 방지: 긴 공백 줄도 선형 시간에 처리되고 평문으로 분류된다.
+    import time
+
+    line = "2024.3.1" + " " * 50_000 + "끝"
+    start = time.perf_counter()
+    entries = RuleExtractor().extract(line)
+    elapsed = time.perf_counter() - start
+
+    assert elapsed < 1.0  # 고치기 전엔 수 초; 고친 뒤 ~수 ms
+    assert len(entries) == 1
+    assert entries[0].source == "plain"
