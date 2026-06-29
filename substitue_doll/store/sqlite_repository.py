@@ -1,7 +1,7 @@
 """SQLite 정제물 저장소 어댑터 (Issue #4 §6: 파일 티어).
 
 core.Repository 포트의 SQLite 구현. 표준 라이브러리 `sqlite3`만 사용(의존성 0).
-시즌2 프로덕션에서 Postgres+pgvector 어댑터로 교체 가능.
+모드2 프로덕션에서 Postgres+pgvector 어댑터로 교체 가능.
 """
 
 from __future__ import annotations
