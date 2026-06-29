@@ -7,6 +7,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
+
+Source = Literal["structured", "plain"]
 
 
 @dataclass(frozen=True)
@@ -24,7 +27,7 @@ class RefinedRecord:
     speaker: str
     text: str
     order: int
-    source: str
+    source: Source
     ts: str | None = None
     event: str | None = None
     emotion: str | None = None

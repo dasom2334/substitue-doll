@@ -33,9 +33,13 @@ class SqliteRepository:
 
     def __init__(self, db_path: Path | str) -> None:
         self._conn = sqlite3.connect(str(db_path))
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute(_CREATE)
-        self._conn.commit()
+        try:  # 초기화 실패 시 연결을 닫고 재raise (핸들/락 누수 방지)
+            self._conn.row_factory = sqlite3.Row
+            self._conn.execute(_CREATE)
+            self._conn.commit()
+        except Exception:
+            self._conn.close()
+            raise
 
     def add(self, record: RefinedRecord) -> None:
         self.add_many([record])
