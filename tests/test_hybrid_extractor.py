@@ -65,6 +65,27 @@ def test_fallback_failure_keeps_rule_result() -> None:
     assert entries == [ExtractedEntry(text=PIPE_SEGMENT, order=0, source="plain")]  # 룰 결과 유지
 
 
+def test_dated_prose_does_not_trigger_fallback() -> None:
+    # PR #13 리뷰 #1 회귀 방지: 날짜가 문장 속에 있는 평문 회고는 LLM을 부르면 안 된다.
+    fallback = FakeFallback()
+    entries = HybridExtractor(fallback).extract("2024.3.1 그날 정말 힘들었다\n그래서 밤새 울었다")
+
+    assert fallback.calls == []
+    assert entries[0].source == "plain"
+
+
+def test_english_log_format_triggers_fallback() -> None:
+    # 다국어: 영어권 로그(AM/PM)도 구조 신호로 잡혀 폴백으로 간다(파싱은 LLM 몫).
+    fallback = FakeFallback(
+        [ExtractedEntry(text="hi", order=0, source="structured", speaker="John", ts=None)]
+    )
+    segment = "2024-03-01 9:12 PM | John | hi"
+    entries = HybridExtractor(fallback).extract(segment)
+
+    assert fallback.calls == [segment]
+    assert entries[0].speaker == "John"
+
+
 def test_mixed_segments_only_uncertain_goes_to_llm_and_order_is_global() -> None:
     fallback = FakeFallback(
         [ExtractedEntry(text="안녕", order=0, source="structured", speaker="나", ts=None)]

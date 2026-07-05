@@ -16,9 +16,13 @@ from dataclasses import replace
 from substitue_doll.core.extraction import ExtractedEntry, Extractor
 from substitue_doll.extract.rule import RuleExtractor
 
-# 구조 신호: 날짜 타임스탬프 또는 줄머리 대괄호 라벨. (rule.py 패턴과 의도 일치,
-# 단 여기선 "구조처럼 보이는가"만 보므로 느슨해도 된다 — 오탐 비용은 LLM 호출 1회.)
-_SIGNAL = re.compile(r"\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}|^\[[^\]]{1,30}\]")
+# 구조 신호는 "줄이 로그 형태인가"로 판정한다: 줄머리 대괄호 라벨, 또는 **줄머리** 날짜가
+# 시각(오전/오후·AM/PM)이나 구분자(| ,)와 동반될 때만. 날짜가 문장 속에만 있는 평문 회고
+# ("2024.3.1 그날 힘들었다")는 신호가 아니다 — 불필요한 LLM 호출(비용) 방지 (PR #13 리뷰 #1).
+# 다국어/낯선 포맷의 실제 파싱은 폴백(LLM)의 몫이고, 신호는 언어 무관 패턴(숫자·구분자)으로 잡는다.
+_DATE = r"\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}"
+_TIME = r"(?:(?:오전|오후)[ ]?)?\d{1,2}:\d{2}(?:[ ]?[AaPp][Mm])?"
+_SIGNAL = re.compile(rf"^\[[^\]]{{1,30}}\]|^{_DATE}(?:[ ]+{_TIME}|[ ]*[|,])")
 
 
 def _split_segments(text: str) -> list[str]:

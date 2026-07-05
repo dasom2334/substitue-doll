@@ -5,6 +5,10 @@
 
 응답 파싱에 실패하면 빈 리스트를 반환한다 — 호출자(하이브리드)는 이를 "폴백 실패"로
 보고 룰 결과를 유지한다(안전 방향).
+
+전량 폐기 정책(의도된 설계): 응답 배열 중 **한 항목이라도** 스키마 위반이면 전체를
+폐기한다. 부분 수용은 오염된 항목을 정제·저장으로 전파시킬 수 있어, 룰 결과 유지가
+더 안전하다. "부분 수용으로 개선"하지 말 것 (PR #13 리뷰 #3).
 """
 
 from __future__ import annotations
@@ -14,6 +18,9 @@ import json
 from substitue_doll.core.extraction import ExtractedEntry
 from substitue_doll.core.llm import LlmClient
 
+# 주의: 사용자 입력이 <<< >>> 사이에 그대로 들어가므로 프롬프트 인젝션이 이론상 가능하다.
+# 방어선: ① 아래 스키마 검증(형식 안 맞으면 전량 폐기) ② 결과는 저장 전 §4 정제를 거침.
+# 실데이터 단계에서 구분자를 호출마다 랜덤 토큰으로 바꾸는 강화를 고려 (PR #13 리뷰 #2).
 _PROMPT_TEMPLATE = """다음 텍스트에서 대화 발화를 추출해라.
 
 규칙:
@@ -71,6 +78,10 @@ class LlmExtractor:
                 return []
             if ts is not None and not isinstance(ts, str):
                 return []
+            if isinstance(speaker, str):
+                speaker = speaker.strip() or None  # 빈 화자("")는 None으로 정규화 (리뷰 #4)
+            if isinstance(ts, str):
+                ts = ts.strip() or None
             entries.append(
                 ExtractedEntry(
                     text=body.strip(),

@@ -60,3 +60,13 @@ def test_item_without_text_returns_empty() -> None:
 
 def test_client_failure_returns_empty() -> None:
     assert LlmExtractor(BoomClient()).extract("x") == []
+
+
+def test_empty_speaker_normalized_to_none() -> None:
+    # PR #13 리뷰 #4: speaker=""는 None으로 정규화되어 화자 상태가 두 가지로 유지된다.
+    client = FakeClient('[{"speaker": "", "ts": "", "text": "혼잣말"}]')
+    entries = LlmExtractor(client).extract("x")
+
+    assert entries == [ExtractedEntry(text="혼잣말", order=0, source="plain")]
+    assert entries[0].speaker is None
+    assert entries[0].ts is None
