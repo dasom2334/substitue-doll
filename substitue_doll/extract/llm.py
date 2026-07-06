@@ -52,6 +52,9 @@ class LlmExtractor:
         self._client = client
 
     def extract(self, text: str) -> list[ExtractedEntry]:
+        # `.format()`이 아니라 `.replace()`인 이유(모드1 종합 리뷰): 이 템플릿엔 JSON 예시의
+        # 리터럴 중괄호가 있고 사용자 텍스트에도 `{}`가 올 수 있어 format은 깨진다.
+        # 단일 치환 replace는 재스캔이 없어 안전 — "일관성 정리"로 format 전환 금지.
         prompt = _PROMPT_TEMPLATE.replace("{payload}", text)
         try:
             raw = self._client.complete(prompt)
