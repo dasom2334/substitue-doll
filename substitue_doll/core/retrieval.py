@@ -37,10 +37,9 @@ def build_index(*, repository: Repository, embedder: Embedder, index: VectorInde
     items = repository.load_all_with_ids()
     if not items:
         return 0
+    record_ids = [record_id for record_id, _ in items]
     vectors = embedder.embed([record.text for _, record in items])
-    index.add_many(
-        [(record_id, vector) for (record_id, _), vector in zip(items, vectors, strict=True)]
-    )
+    index.add_many(list(zip(record_ids, vectors, strict=True)))
     return len(items)
 
 

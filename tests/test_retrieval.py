@@ -98,3 +98,17 @@ def test_load_by_ids_preserves_ranking_order(tmp_path: Path) -> None:
         reversed_ids = list(reversed(ids))
         assert [r.text for r in repo.load_by_ids(reversed_ids)] == ["c", "b", "a"]
         assert repo.load_by_ids([]) == []
+
+
+def test_load_by_ids_over_sqlite_variable_limit(tmp_path: Path) -> None:
+    # PR #17 리뷰 #3: id가 SQLite 변수 한도(999)를 넘어도 청크 조회로 동작한다.
+    db = tmp_path / "store.db"
+    with SqliteRepository(db) as repo:
+        repo.add_many([_record(f"t{i}", i) for i in range(1200)])
+        ids = [record_id for record_id, _ in repo.load_all_with_ids()]
+
+        loaded = repo.load_by_ids(ids)
+
+        assert len(loaded) == 1200
+        assert loaded[0].text == "t0"
+        assert loaded[-1].text == "t1199"
