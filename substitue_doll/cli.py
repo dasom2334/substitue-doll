@@ -14,7 +14,8 @@
 - reply: 새 상황에 대해 '나' 말투의 답변 **초안**을 생성한다(생성만, 발송 없음 — §0).
 - eval: 상황 파일(한 줄 = 한 상황)로 MVP 평가(PLAN §5) — 상황별 top-k와 초안을 출력해
   사람이 관련성·말투 유사를 판정한다.
-- ⚠️ reply/eval은 LLM 제공자 설정 후 동작한다(현재 미설정 — Issue #12 PR-5 게이트).
+- LLM은 로컬 Ollama(`docker compose up -d` + 모델 pull — README 참조). 설정은
+  `.env`(`OLLAMA_BASE_URL`/`LLM_MODEL`, `env.example` 참조).
 - 추출기는 현재 룰 기반(RuleExtractor)만 연결한다. LLM 폴백(HybridExtractor)은
   제공자 어댑터가 생기는 시점(Issue #12 PR-5 게이트)에 교체 연결한다.
 - 기본 DB 경로는 **리포 루트에서 실행**을 전제로 한 상대경로 `data/` 다(.gitignore 대상).
@@ -34,7 +35,8 @@ from substitue_doll.core.ingest import IngestResult, ingest
 from substitue_doll.core.llm import LlmClient
 from substitue_doll.core.reply import reply
 from substitue_doll.core.retrieval import build_index, retrieve
-from substitue_doll.extract.rule import RuleExtractor
+from substitue_doll.extract.hybrid import HybridExtractor
+from substitue_doll.extract.llm import LlmExtractor
 from substitue_doll.refine.stub import refine
 from substitue_doll.store.sqlite_repository import SqliteRepository
 from substitue_doll.store.sqlite_vector_index import SqliteVectorIndex
@@ -50,11 +52,10 @@ def _make_embedder() -> Embedder:
 
 
 def _make_llm() -> LlmClient:
-    """LLM 클라이언트 팩토리 — 제공자 어댑터가 결정되면 여기서 연결한다."""
-    raise RuntimeError(
-        "LLM 제공자가 아직 설정되지 않았습니다 — 제공자·API 키 결정 후 어댑터가"
-        " 연결됩니다(Issue #12 PR-5 게이트)."
-    )
+    """LLM 클라이언트 팩토리 — 로컬 Ollama(Issue #12 PR-6 결정). 생성은 네트워크 무비용."""
+    from substitue_doll.llm.ollama import OllamaClient
+
+    return OllamaClient()
 
 
 def _confirm_me(candidates: tuple[str, ...]) -> str | None:
@@ -82,7 +83,9 @@ def _run_ingest(input_path: Path, db_path: Path, me: str | None) -> IngestResult
         print(f"입력 파일을 읽을 수 없습니다: {exc}", file=sys.stderr)
         return None
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    extractor = RuleExtractor()
+    # 룰 우선 + 자신 없는 구간만 LLM 폴백(1B-ii). Ollama가 꺼져 있어도 폴백 추출기가
+    # 실패를 빈 결과로 삼켜 룰 결과가 유지된다(안전 방향) — ingest는 LLM 없이도 동작.
+    extractor = HybridExtractor(fallback=LlmExtractor(_make_llm()))
     with SqliteRepository(db_path) as repository:
         # 호출을 한 곳에 모아 인자 표류·이중 생성 방지 (PR #16 리뷰 — HybridExtractor
         # 교체 시 이중 추출=이중 비용이 되는 것도 막는다).
@@ -157,9 +160,18 @@ def _cmd_reply(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 1
     with SqliteRepository(args.db) as repository, SqliteVectorIndex(args.db) as index:
-        result = reply(
-            args.situation, llm=llm, embedder=embedder, index=index, repository=repository, k=args.k
-        )
+        try:
+            result = reply(
+                args.situation,
+                llm=llm,
+                embedder=embedder,
+                index=index,
+                repository=repository,
+                k=args.k,
+            )
+        except Exception as exc:  # 껍데기 경계: LLM/네트워크 실패를 트레이스백 없이 정돈 (§3)
+            print(f"초안 생성 실패: {exc}", file=sys.stderr)
+            return 1
     print(result.draft)
     if result.examples:
         print("\n--- 근거가 된 과거 발화 ---", file=sys.stderr)
@@ -191,19 +203,30 @@ def _cmd_eval(args: argparse.Namespace) -> int:
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1
+    failures = 0
     with SqliteRepository(args.db) as repository, SqliteVectorIndex(args.db) as index:
         for number, situation in enumerate(situations, start=1):
-            result = reply(
-                situation, llm=llm, embedder=embedder, index=index, repository=repository, k=args.k
-            )
             print(f"\n=== 상황 {number}/{len(situations)}: {situation}")
+            try:
+                result = reply(
+                    situation,
+                    llm=llm,
+                    embedder=embedder,
+                    index=index,
+                    repository=repository,
+                    k=args.k,
+                )
+            except Exception as exc:  # 부분 실패가 평가 배치 전체를 죽이지 않게 (PR #18 리뷰)
+                failures += 1
+                print(f"  생성 실패: {exc}")
+                continue
             print("--- 검색 top-k (관련성 판정 대상):")
             for rank, record in enumerate(result.examples, start=1):
                 print(f"  {rank}. [{record.speaker}] {record.text}")
             print("--- 생성 초안 (말투 유사 판정 대상):")
             print(f"  {result.draft}")
     print("\n판정 기준(PLAN §5): 상황별 top-k가 관련 있고 초안이 내 말투와 유사하면 MVP 통과.")
-    return 0
+    return 1 if failures == len(situations) else 0  # 전부 실패했을 때만 오류
 
 
 def main(argv: list[str] | None = None) -> int:
