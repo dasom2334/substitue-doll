@@ -4,11 +4,17 @@
   python -m substitue_doll.cli ingest <입력파일> [--db 경로] [--me 라벨]
   python -m substitue_doll.cli index  [--db 경로]
   python -m substitue_doll.cli search <질의> [--db 경로] [-k N]
+  python -m substitue_doll.cli reply  <상황>  [--db 경로] [-k N]
+  python -m substitue_doll.cli eval   <상황파일> [--db 경로] [-k N]
 
 - ingest: 자유 형식 텍스트를 인입한다. '나'가 애매하면 후보를 보여주고 1회 확인한다
   (--me 로 미리 주면 묻지 않는다 — Issue #4 §9-8).
 - index: 저장된 정제물 전체를 임베딩해 같은 DB 파일의 벡터 인덱스에 적재한다(2단계).
 - search: 질의와 의미가 가까운 발화 top-k를 출력한다(검색 단독 확인용).
+- reply: 새 상황에 대해 '나' 말투의 답변 **초안**을 생성한다(생성만, 발송 없음 — §0).
+- eval: 상황 파일(한 줄 = 한 상황)로 MVP 평가(PLAN §5) — 상황별 top-k와 초안을 출력해
+  사람이 관련성·말투 유사를 판정한다.
+- ⚠️ reply/eval은 LLM 제공자 설정 후 동작한다(현재 미설정 — Issue #12 PR-5 게이트).
 - 추출기는 현재 룰 기반(RuleExtractor)만 연결한다. LLM 폴백(HybridExtractor)은
   제공자 어댑터가 생기는 시점(Issue #12 PR-5 게이트)에 교체 연결한다.
 - 기본 DB 경로는 **리포 루트에서 실행**을 전제로 한 상대경로 `data/` 다(.gitignore 대상).
@@ -25,6 +31,8 @@ from pathlib import Path
 
 from substitue_doll.core.embedding import Embedder
 from substitue_doll.core.ingest import IngestResult, ingest
+from substitue_doll.core.llm import LlmClient
+from substitue_doll.core.reply import reply
 from substitue_doll.core.retrieval import build_index, retrieve
 from substitue_doll.extract.rule import RuleExtractor
 from substitue_doll.refine.stub import refine
@@ -39,6 +47,14 @@ def _make_embedder() -> Embedder:
     from substitue_doll.embed.sentence_transformer import SentenceTransformerEmbedder
 
     return SentenceTransformerEmbedder()
+
+
+def _make_llm() -> LlmClient:
+    """LLM 클라이언트 팩토리 — 제공자 어댑터가 결정되면 여기서 연결한다."""
+    raise RuntimeError(
+        "LLM 제공자가 아직 설정되지 않았습니다 — 제공자·API 키 결정 후 어댑터가"
+        " 연결됩니다(Issue #12 PR-5 게이트)."
+    )
 
 
 def _confirm_me(candidates: tuple[str, ...]) -> str | None:
@@ -132,6 +148,59 @@ def _cmd_search(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_reply(args: argparse.Namespace) -> int:
+    try:
+        llm = _make_llm()
+        embedder = _make_embedder()
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    with SqliteRepository(args.db) as repository, SqliteVectorIndex(args.db) as index:
+        result = reply(
+            args.situation, llm=llm, embedder=embedder, index=index, repository=repository, k=args.k
+        )
+    print(result.draft)
+    if result.examples:
+        print("\n--- 근거가 된 과거 발화 ---", file=sys.stderr)
+        for record in result.examples:
+            print(f"  [{record.speaker}] {record.text}", file=sys.stderr)
+    return 0
+
+
+def _cmd_eval(args: argparse.Namespace) -> int:
+    """MVP 평가(PLAN §5): 상황별 top-k 관련성 + 초안 말투 유사를 사람이 판정하도록 출력."""
+    try:
+        situations = [
+            line.strip() for line in args.situations.read_text(encoding="utf-8").splitlines()
+        ]
+    except OSError as exc:
+        print(f"상황 파일을 읽을 수 없습니다: {exc}", file=sys.stderr)
+        return 1
+    situations = [s for s in situations if s]
+    if not situations:
+        print("평가할 상황이 없습니다.", file=sys.stderr)
+        return 1
+    try:
+        llm = _make_llm()
+        embedder = _make_embedder()
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    with SqliteRepository(args.db) as repository, SqliteVectorIndex(args.db) as index:
+        for number, situation in enumerate(situations, start=1):
+            result = reply(
+                situation, llm=llm, embedder=embedder, index=index, repository=repository, k=args.k
+            )
+            print(f"\n=== 상황 {number}/{len(situations)}: {situation}")
+            print("--- 검색 top-k (관련성 판정 대상):")
+            for rank, record in enumerate(result.examples, start=1):
+                print(f"  {rank}. [{record.speaker}] {record.text}")
+            print("--- 생성 초안 (말투 유사 판정 대상):")
+            print(f"  {result.draft}")
+    print("\n판정 기준(PLAN §5): 상황별 top-k가 관련 있고 초안이 내 말투와 유사하면 MVP 통과.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="substitue-doll")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -149,6 +218,16 @@ def main(argv: list[str] | None = None) -> int:
     search_parser.add_argument("--db", type=Path, default=DEFAULT_DB, help="SQLite 파일 경로")
     search_parser.add_argument("-k", type=int, default=5, help="반환 개수(기본 5)")
 
+    reply_parser = subparsers.add_parser("reply", help="'나' 말투의 답변 초안 생성")
+    reply_parser.add_argument("situation", help="새 상황(상대가 보낸 말 등)")
+    reply_parser.add_argument("--db", type=Path, default=DEFAULT_DB, help="SQLite 파일 경로")
+    reply_parser.add_argument("-k", type=int, default=5, help="근거 발화 개수(기본 5)")
+
+    eval_parser = subparsers.add_parser("eval", help="MVP 평가 — 상황 파일(한 줄=한 상황)")
+    eval_parser.add_argument("situations", type=Path, help="상황 목록 파일")
+    eval_parser.add_argument("--db", type=Path, default=DEFAULT_DB, help="SQLite 파일 경로")
+    eval_parser.add_argument("-k", type=int, default=5, help="근거 발화 개수(기본 5)")
+
     args = parser.parse_args(argv)
     if args.command == "ingest":
         return _cmd_ingest(args)
@@ -156,6 +235,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_index(args)
     if args.command == "search":
         return _cmd_search(args)
+    if args.command == "reply":
+        return _cmd_reply(args)
+    if args.command == "eval":
+        return _cmd_eval(args)
     return 2  # pragma: no cover — argparse의 required=True가 막는다
 
 
