@@ -39,9 +39,13 @@ class OllamaClient:
             f"{self._base_url}/api/generate",
             data=payload,
             headers={"Content-Type": "application/json"},
+            method="POST",
         )
         with urllib.request.urlopen(request, timeout=self._timeout) as response:
             data = json.loads(response.read().decode("utf-8"))
+        error = data.get("error")
+        if error:  # 원인(예: "no such model")을 뭉개지 않고 그대로 싣는다
+            raise RuntimeError(f"Ollama 오류: {error}")
         answer = data.get("response")
         if not isinstance(answer, str):
             raise RuntimeError(f"Ollama 응답 형식이 예상과 다릅니다: {type(answer).__name__}")

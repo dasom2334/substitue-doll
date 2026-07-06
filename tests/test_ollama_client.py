@@ -61,9 +61,19 @@ def test_constructor_args_override_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert OllamaClient(model="arg-model").complete("x") == "ok"
 
 
+def test_error_field_surfaces_cause(monkeypatch: pytest.MonkeyPatch) -> None:
+    # PR #19 리뷰: error 원인("no such model")이 뭉개지지 않고 예외 메시지에 실린다.
+    def fake_urlopen(request: Any, timeout: float) -> _FakeResponse:
+        return _FakeResponse(json.dumps({"error": "no such model"}).encode("utf-8"))
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    with pytest.raises(RuntimeError, match="no such model"):
+        OllamaClient().complete("x")
+
+
 def test_unexpected_response_shape_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_urlopen(request: Any, timeout: float) -> _FakeResponse:
-        return _FakeResponse(json.dumps({"error": "no model"}).encode("utf-8"))
+        return _FakeResponse(json.dumps({"done": True}).encode("utf-8"))
 
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
     with pytest.raises(RuntimeError, match="응답 형식"):

@@ -10,7 +10,7 @@ services:
   ollama:
     image: ollama/ollama:latest
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"  # 루프백만 — 같은 네트워크 기기 노출 방지(프라이버시 정합)
     volumes:
       - ollama-models:/root/.ollama
     restart: unless-stopped

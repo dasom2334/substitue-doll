@@ -16,8 +16,8 @@
   사람이 관련성·말투 유사를 판정한다.
 - LLM은 로컬 Ollama(`docker compose up -d` + 모델 pull — README 참조). 설정은
   `.env`(`OLLAMA_BASE_URL`/`LLM_MODEL`, `env.example` 참조).
-- 추출기는 현재 룰 기반(RuleExtractor)만 연결한다. LLM 폴백(HybridExtractor)은
-  제공자 어댑터가 생기는 시점(Issue #12 PR-5 게이트)에 교체 연결한다.
+- 추출기는 **룰 우선 + 자신 없는 구간만 LLM 폴백**(HybridExtractor). Ollama가 꺼져
+  있어도 폴백이 빈 결과로 처리돼 ingest는 룰만으로 동작한다.
 - 기본 DB 경로는 **리포 루트에서 실행**을 전제로 한 상대경로 `data/` 다(.gitignore 대상).
   다른 위치에서 실행하면 그 위치에 data/가 생기니 `--db`로 명시하라 (PR #16 리뷰 #4).
 
@@ -153,7 +153,7 @@ def _cmd_search(args: argparse.Namespace) -> int:
 
 def _cmd_reply(args: argparse.Namespace) -> int:
     try:
-        # llm을 먼저 만든다 — 제공자 미설정 게이트를 무거운 임베더 로드보다 앞서 막는다.
+        # 가벼운 것 먼저 — llm 생성은 무비용, 임베더는 torch 로드로 무겁다.
         llm = _make_llm()
         embedder = _make_embedder()
     except RuntimeError as exc:
@@ -169,7 +169,9 @@ def _cmd_reply(args: argparse.Namespace) -> int:
                 repository=repository,
                 k=args.k,
             )
-        except Exception as exc:  # 껍데기 경계: LLM/네트워크 실패를 트레이스백 없이 정돈 (§3)
+        except Exception as exc:
+            # 껍데기 경계: LlmClient 포트는 예외를 명세하지 않아(어댑터마다 다름)
+            # 임의 실패를 모두 받아 트레이스백 없이 정돈한다 (§3).
             print(f"초안 생성 실패: {exc}", file=sys.stderr)
             return 1
     print(result.draft)
