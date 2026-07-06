@@ -150,6 +150,7 @@ def _cmd_search(args: argparse.Namespace) -> int:
 
 def _cmd_reply(args: argparse.Namespace) -> int:
     try:
+        # llm을 먼저 만든다 — 제공자 미설정 게이트를 무거운 임베더 로드보다 앞서 막는다.
         llm = _make_llm()
         embedder = _make_embedder()
     except RuntimeError as exc:
@@ -168,7 +169,11 @@ def _cmd_reply(args: argparse.Namespace) -> int:
 
 
 def _cmd_eval(args: argparse.Namespace) -> int:
-    """MVP 평가(PLAN §5): 상황별 top-k 관련성 + 초안 말투 유사를 사람이 판정하도록 출력."""
+    """MVP 평가(PLAN §5): 상황별 top-k 관련성 + 초안 말투 유사를 사람이 판정하도록 출력.
+
+    reply와 달리 근거까지 전부 stdout으로 낸다 — eval 출력은 리포트 전체가 판정
+    대상이라 한 스트림으로 일원화한다(의도된 정책 차이).
+    """
     try:
         situations = [
             line.strip() for line in args.situations.read_text(encoding="utf-8").splitlines()
