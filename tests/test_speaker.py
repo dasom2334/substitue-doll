@@ -67,3 +67,23 @@ def test_candidates_keep_first_appearance_order() -> None:
     ]
 
     assert resolve_me(entries).candidates == ("상대", "나")
+
+
+def test_empty_entries_no_confirmation() -> None:
+    # PR #15 리뷰 #4: 빈 입력은 후보도 확인도 없다.
+    assert resolve_me([]) == SpeakerResolution(candidates=(), me=None, needs_confirmation=False)
+
+
+def test_repeated_marker_label_still_confident() -> None:
+    # PR #15 리뷰 #5: 동일 마커 라벨("나")이 여러 번 등장해도 후보 중복 제거로
+    # "정확히 하나"로 셈해 확신이 유지된다 — 판정 규칙의 근간을 회귀로부터 박제.
+    entries = [
+        _structured("나", "안녕", 0),
+        _structured("상대", "오랜만", 1),
+        _structured("나", "잘 지냈어?", 2),
+        _structured("나", "요즘 어때", 3),
+    ]
+
+    assert resolve_me(entries) == SpeakerResolution(
+        candidates=("나", "상대"), me="나", needs_confirmation=False
+    )
