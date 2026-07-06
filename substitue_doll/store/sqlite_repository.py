@@ -54,18 +54,34 @@ class SqliteRepository:
 
     def load_all(self) -> list[RefinedRecord]:
         cursor = self._conn.execute(f"SELECT {_COLUMNS} FROM refined_records ORDER BY id")
-        return [
-            RefinedRecord(
-                speaker=row["speaker"],
-                text=row["text"],
-                order=row["ord"],
-                source=row["source"],
-                ts=row["ts"],
-                event=row["event"],
-                emotion=row["emotion"],
-            )
-            for row in cursor.fetchall()
-        ]
+        return [self._to_record(row) for row in cursor.fetchall()]
+
+    def load_all_with_ids(self) -> list[tuple[int, RefinedRecord]]:
+        cursor = self._conn.execute(f"SELECT id, {_COLUMNS} FROM refined_records ORDER BY id")
+        return [(int(row["id"]), self._to_record(row)) for row in cursor.fetchall()]
+
+    def load_by_ids(self, ids: list[int]) -> list[RefinedRecord]:
+        if not ids:
+            return []
+        placeholders = ", ".join("?" for _ in ids)
+        cursor = self._conn.execute(
+            f"SELECT id, {_COLUMNS} FROM refined_records WHERE id IN ({placeholders})", ids
+        )
+        by_id = {int(row["id"]): self._to_record(row) for row in cursor.fetchall()}
+        # SQL IN은 순서를 보장하지 않으므로 입력 id 순서(=유사도 랭킹)를 여기서 복원한다.
+        return [by_id[record_id] for record_id in ids if record_id in by_id]
+
+    @staticmethod
+    def _to_record(row: sqlite3.Row) -> RefinedRecord:
+        return RefinedRecord(
+            speaker=row["speaker"],
+            text=row["text"],
+            order=row["ord"],
+            source=row["source"],
+            ts=row["ts"],
+            event=row["event"],
+            emotion=row["emotion"],
+        )
 
     def count(self) -> int:
         row = self._conn.execute("SELECT COUNT(*) AS n FROM refined_records").fetchone()

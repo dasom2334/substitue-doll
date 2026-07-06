@@ -28,6 +28,14 @@ class Repository(Protocol):
         """저장된 레코드를 저장 순서대로 모두 반환한다."""
         ...
 
+    def load_all_with_ids(self) -> list[tuple[int, RefinedRecord]]:
+        """(저장소 id, 레코드) 쌍을 저장 순서대로 모두 반환한다 — 인덱싱용(2단계)."""
+        ...
+
+    def load_by_ids(self, ids: list[int]) -> list[RefinedRecord]:
+        """주어진 id 순서를 **유지**하며 레코드를 반환한다(없는 id는 건너뜀) — 검색 결과용."""
+        ...
+
     def count(self) -> int:
         """저장된 레코드 수."""
         ...
