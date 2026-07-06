@@ -67,7 +67,10 @@ def _confirm_me(candidates: tuple[str, ...]) -> str | None:
     print("'나'를 판별하지 못했습니다. 본인 라벨을 골라주세요:")
     for i, candidate in enumerate(candidates, start=1):
         print(f"  {i}. {candidate}")
-    answer = input("번호 또는 라벨 입력: ").strip()
+    try:
+        answer = input("번호 또는 라벨 입력: ").strip()
+    except EOFError:  # 비대화형(stdin 닫힘) — 트레이스백 없이 중단 경로로 (라이브 테스트 발견)
+        return None
     if answer.isdigit() and 1 <= int(answer) <= len(candidates):
         return candidates[int(answer) - 1]
     if answer in candidates:
