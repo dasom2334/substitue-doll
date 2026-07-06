@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from substitue_doll.core.ingest import ingest
 from substitue_doll.extract.rule import RuleExtractor
 from substitue_doll.refine.stub import refine
@@ -53,3 +55,24 @@ def test_ambiguous_with_me_normalizes_label(tmp_path: Path) -> None:
     with SqliteRepository(db) as repo:
         records = repo.load_all()
     assert [r.speaker for r in records] == ["나", "영희"]  # 확인된 라벨은 '나'로 정규화
+
+
+def test_me_not_in_candidates_raises(tmp_path: Path) -> None:
+    # PR #16 리뷰 #1: me 오타가 조용히 통과해 '나' 발화 0건 데이터를 만들면 안 된다.
+    db = tmp_path / "store.db"
+    with SqliteRepository(db) as repo:
+        with pytest.raises(ValueError, match="화자 후보에 없다"):
+            ingest(
+                AMBIGUOUS, extractor=RuleExtractor(), repository=repo, refine=refine, me="없는사람"
+            )
+        assert repo.count() == 0  # 아무것도 저장되지 않음
+
+
+def test_me_ignored_when_no_speakers(tmp_path: Path) -> None:
+    # 화자가 아예 없는 평문 입력에서는 me가 무의미하므로 무시하고 진행한다.
+    db = tmp_path / "store.db"
+    stored, needs_confirmation = _ingest("그냥 힘든 하루였다", db, me="철수")
+
+    assert (stored, needs_confirmation) == (1, False)
+    with SqliteRepository(db) as repo:
+        assert repo.load_all()[0].speaker == "나"  # 평문은 본인 서술

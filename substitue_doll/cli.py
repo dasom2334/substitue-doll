@@ -5,6 +5,10 @@
   (--me 로 미리 주면 묻지 않는다 — Issue #4 §9-8).
 - 추출기는 현재 룰 기반(RuleExtractor)만 연결한다. LLM 폴백(HybridExtractor)은
   제공자 어댑터가 생기는 시점(Issue #12 PR-5 게이트)에 교체 연결한다.
+- 기본 DB 경로는 **리포 루트에서 실행**을 전제로 한 상대경로 `data/` 다(.gitignore 대상).
+  다른 위치에서 실행하면 그 위치에 data/가 생기니 `--db`로 명시하라 (PR #16 리뷰 #4).
+
+종료 코드: 0 = 저장 성공 또는 저장할 내용 없음(정상), 1 = 오류/확인 중단.
 """
 
 from __future__ import annotations
@@ -18,7 +22,7 @@ from substitue_doll.extract.rule import RuleExtractor
 from substitue_doll.refine.stub import refine
 from substitue_doll.store.sqlite_repository import SqliteRepository
 
-DEFAULT_DB = Path("data") / "substitue.db"  # data/ 는 .gitignore 대상
+DEFAULT_DB = Path("data") / "substitue.db"  # 리포 루트 실행 전제 — 모듈 docstring 참조
 
 
 def _confirm_me(candidates: tuple[str, ...]) -> str | None:
@@ -34,18 +38,27 @@ def _confirm_me(candidates: tuple[str, ...]) -> str | None:
     return None
 
 
-def _run_ingest(input_path: Path, db_path: Path, me: str | None) -> IngestResult:
-    text = input_path.read_text(encoding="utf-8")
+def _run_ingest(input_path: Path, db_path: Path, me: str | None) -> IngestResult | None:
+    """인입 실행. 실패(파일/인자 오류·확인 중단)면 None."""
+    try:
+        text = input_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"입력 파일을 읽을 수 없습니다: {exc}", file=sys.stderr)
+        return None
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with SqliteRepository(db_path) as repository:
-        result = ingest(
-            text, extractor=RuleExtractor(), repository=repository, refine=refine, me=me
-        )
+        try:
+            result = ingest(
+                text, extractor=RuleExtractor(), repository=repository, refine=refine, me=me
+            )
+        except ValueError as exc:
+            print(f"인입 실패: {exc}", file=sys.stderr)
+            return None
         if result.stored == 0 and result.resolution.needs_confirmation and me is None:
             chosen = _confirm_me(result.resolution.candidates)
             if chosen is None:
                 print("알 수 없는 선택 — 인입을 중단합니다.", file=sys.stderr)
-                return result
+                return None
             result = ingest(
                 text, extractor=RuleExtractor(), repository=repository, refine=refine, me=chosen
             )
@@ -62,11 +75,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     result = _run_ingest(args.input, args.db, args.me)
+    if result is None:
+        return 1
     if result.stored:
         print(f"{result.stored}건 저장 완료")
         return 0
-    print("저장된 것 없음", file=sys.stderr)
-    return 1
+    # 빈 입력 등 "저장할 게 없음"은 오류가 아니다 (PR #16 리뷰 #3).
+    print("저장할 내용이 없습니다.")
+    return 0
 
 
 if __name__ == "__main__":

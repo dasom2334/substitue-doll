@@ -47,6 +47,10 @@ def ingest(
     """자유 형식 입력을 추출·정제해 저장한다."""
     entries = extractor.extract(text)
     resolution = resolve_me(entries)
+    if me is not None and resolution.candidates and me not in resolution.candidates:
+        # 잘못된 인자는 경계에서 즉시 시끄럽게 — 조용히 통과하면 '나' 발화 0건인
+        # 손상 데이터가 저장된다 (PR #16 리뷰 #1). 화자가 아예 없으면(평문뿐) me는 무시.
+        raise ValueError(f"me 라벨이 화자 후보에 없다: {me!r} (후보: {resolution.candidates})")
     if resolution.needs_confirmation and me is None:
         return IngestResult(stored=0, resolution=resolution)
     effective_me = me if me is not None else resolution.me
