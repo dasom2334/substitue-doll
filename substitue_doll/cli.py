@@ -78,7 +78,7 @@ def _run_ingest(input_path: Path, db_path: Path, me: str | None) -> IngestResult
     """인입 실행. 실패(파일/인자 오류·확인 중단)면 None."""
     try:
         text = input_path.read_text(encoding="utf-8")
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:  # UnicodeDecodeError는 OSError가 아니다
         print(f"입력 파일을 읽을 수 없습니다: {exc}", file=sys.stderr)
         return None
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -173,7 +173,7 @@ def _cmd_eval(args: argparse.Namespace) -> int:
         situations = [
             line.strip() for line in args.situations.read_text(encoding="utf-8").splitlines()
         ]
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:  # UnicodeDecodeError는 OSError가 아니다
         print(f"상황 파일을 읽을 수 없습니다: {exc}", file=sys.stderr)
         return 1
     situations = [s for s in situations if s]

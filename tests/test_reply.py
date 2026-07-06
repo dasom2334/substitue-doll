@@ -42,6 +42,15 @@ def test_build_prompt_without_examples() -> None:
     assert "(예시 없음)" in build_prompt("상황", [])
 
 
+def test_build_prompt_placeholder_in_example_not_polluted() -> None:
+    # PR #18 리뷰 #1: 예시 텍스트에 플레이스홀더가 있어도 상황으로 치환되면 안 된다.
+    examples = [_record("나", "이거 봐 {situation} 라고 쓰면?", 0)]
+    prompt = build_prompt("우울해", examples)
+
+    assert "이거 봐 {situation} 라고 쓰면?" in prompt  # 리터럴 유지
+    assert "이거 봐 우울해 라고" not in prompt
+
+
 def test_reply_retrieves_context_and_strips_draft(tmp_path: Path) -> None:
     db = tmp_path / "store.db"
     embedder = KeywordEmbedder()

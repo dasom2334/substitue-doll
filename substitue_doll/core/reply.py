@@ -43,10 +43,14 @@ class ReplyResult:
 
 
 def build_prompt(situation: str, examples: list[RefinedRecord]) -> str:
-    """검색된 과거 발화를 근거로 넣는 프롬프트를 조립한다."""
+    """검색된 과거 발화를 근거로 넣는 프롬프트를 조립한다.
+
+    단일 패스 `.format()` 사용 — 순차 replace와 달리 치환값을 재스캔하지 않으므로,
+    예시/상황 텍스트에 플레이스홀더 문자열이 들어 있어도 오염되지 않는다 (PR #18 리뷰 #1).
+    """
     lines = [f"- [{record.speaker}] {record.text}" for record in examples]
     example_block = "\n".join(lines) if lines else "- (예시 없음)"
-    return _PROMPT_TEMPLATE.replace("{examples}", example_block).replace("{situation}", situation)
+    return _PROMPT_TEMPLATE.format(examples=example_block, situation=situation)
 
 
 def reply(

@@ -149,3 +149,13 @@ def test_eval_empty_situations_fails(tmp_path: Path, monkeypatch: pytest.MonkeyP
     situations.write_text("\n\n", encoding="utf-8")
 
     assert main(["eval", str(situations), "--db", str(db)]) == 1
+
+
+def test_non_utf8_input_fails_cleanly(tmp_path: Path) -> None:
+    # PR #18 리뷰 #2: UnicodeDecodeError도 트레이스백 없이 메시지+exit 1.
+    bad = tmp_path / "bad.txt"
+    bad.write_bytes(b"\xff\xfe\x00\x01")
+    db = str(tmp_path / "s.db")
+
+    assert main(["ingest", str(bad), "--db", db]) == 1
+    assert main(["eval", str(bad), "--db", db]) == 1
