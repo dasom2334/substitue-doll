@@ -55,20 +55,22 @@ def ingest(
         return IngestResult(stored=0, resolution=resolution)
     effective_me = me if me is not None else resolution.me
 
-    records: list[RefinedRecord] = []
-    for entry in entries:
-        if entry.speaker is None or entry.speaker == effective_me:
-            speaker = ME_LABEL
-        else:
-            speaker = entry.speaker
-        records.append(
-            RefinedRecord(
-                speaker=speaker,
-                text=refine(entry.text),
-                order=entry.order,
-                source=entry.source,
-                ts=entry.ts,
-            )
+    records = [
+        RefinedRecord(
+            speaker=_normalize_speaker(entry.speaker, effective_me),
+            text=refine(entry.text),
+            order=entry.order,
+            source=entry.source,
+            ts=entry.ts,
         )
+        for entry in entries
+    ]
     repository.add_many(records)
     return IngestResult(stored=len(records), resolution=resolution)
+
+
+def _normalize_speaker(speaker: str | None, me: str | None) -> str:
+    """화자 규칙(모듈 docstring): 평문(None)과 '나' 라벨은 "나"로 통일, 그 외 원 라벨 유지."""
+    if speaker is None or speaker == me:
+        return ME_LABEL
+    return speaker

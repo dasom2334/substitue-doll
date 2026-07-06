@@ -26,7 +26,11 @@ DEFAULT_DB = Path("data") / "substitue.db"  # 리포 루트 실행 전제 — �
 
 
 def _confirm_me(candidates: tuple[str, ...]) -> str | None:
-    """'나' 후보를 보여주고 1회 확인한다(껍데기의 몫)."""
+    """'나' 후보를 보여주고 1회 확인한다(껍데기의 몫).
+
+    입력은 **번호 우선**으로 해석한다 — 후보 라벨이 "1" 같은 숫자 문자열이어도
+    번호 선택으로 본다(드문 엣지, 의도된 규칙).
+    """
     print("'나'를 판별하지 못했습니다. 본인 라벨을 골라주세요:")
     for i, candidate in enumerate(candidates, start=1):
         print(f"  {i}. {candidate}")
@@ -46,11 +50,17 @@ def _run_ingest(input_path: Path, db_path: Path, me: str | None) -> IngestResult
         print(f"입력 파일을 읽을 수 없습니다: {exc}", file=sys.stderr)
         return None
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    extractor = RuleExtractor()
     with SqliteRepository(db_path) as repository:
-        try:
-            result = ingest(
-                text, extractor=RuleExtractor(), repository=repository, refine=refine, me=me
+        # 호출을 한 곳에 모아 인자 표류·이중 생성 방지 (PR #16 리뷰 — HybridExtractor
+        # 교체 시 이중 추출=이중 비용이 되는 것도 막는다).
+        def _ingest_with(me_label: str | None) -> IngestResult:
+            return ingest(
+                text, extractor=extractor, repository=repository, refine=refine, me=me_label
             )
+
+        try:
+            result = _ingest_with(me)
         except ValueError as exc:
             print(f"인입 실패: {exc}", file=sys.stderr)
             return None
@@ -59,9 +69,7 @@ def _run_ingest(input_path: Path, db_path: Path, me: str | None) -> IngestResult
             if chosen is None:
                 print("알 수 없는 선택 — 인입을 중단합니다.", file=sys.stderr)
                 return None
-            result = ingest(
-                text, extractor=RuleExtractor(), repository=repository, refine=refine, me=chosen
-            )
+            result = _ingest_with(chosen)
         return result
 
 
