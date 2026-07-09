@@ -14,7 +14,13 @@ import re
 from dataclasses import replace
 
 from substitue_doll.core.extraction import ExtractedEntry, Extractor
-from substitue_doll.extract.rule import DATE_PATTERN, DATE_SEPARATOR, TIME_PATTERN, RuleExtractor
+from substitue_doll.extract.rule import (
+    DATE_PATTERN,
+    DATE_SEPARATOR,
+    TIME_PATTERN,
+    RuleExtractor,
+    is_date_separator,
+)
 
 # 구조 신호는 "구간이 로그 형태인가"로 판정한다(패턴은 rule.py와 공유 — 이중 관리 방지):
 # ① 줄머리 대괄호 라벨, 또는 줄머리 날짜가 시각/구분자(| ,)와 동반 (줄 단위)
@@ -66,7 +72,9 @@ class HybridExtractor:
         lines = [line.strip() for line in segment.splitlines() if line.strip()]
         # 날짜 구분선은 발화가 아니므로 커버리지 분모에서 제외한다(전부 파싱된 구간이
         # 구분선 때문에 임계 미달로 보이는 오탐 방지).
-        content_lines = [line for line in lines if not DATE_SEPARATOR.match(line)]
+        content_lines = [
+            line for line in lines if not is_date_separator(DATE_SEPARATOR.match(line))
+        ]
         if not content_lines:
             return False
         has_signal = (

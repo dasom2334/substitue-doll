@@ -96,6 +96,35 @@ def test_date_separator_state_attaches_date(  # 사용자 리뷰 #2·#3
     assert entries[1].ts == "2024년 3월 1일 오후 9:15"
 
 
+def test_bare_date_line_preserved_as_plain() -> None:
+    # PR #22 리뷰 #1: 장식 없는 순수 날짜 줄은 감정 앵커 회상일 수 있다 — 소실 금지(§4).
+    entries = RuleExtractor().extract("오늘 기분 이상해\n2024년 3월 1일\n그날 생각나서")
+
+    assert len(entries) == 1
+    assert entries[0].source == "plain"
+    assert "2024년 3월 1일" in entries[0].text  # 날짜 줄이 보존된다
+
+    alone = RuleExtractor().extract("2024. 5. 1.")
+    assert [e.text for e in alone] == ["2024. 5. 1."]
+
+
+def test_weekday_date_line_is_separator() -> None:
+    # 장식 없어도 요일이 붙으면 구분선(메신저 내보내기 형태) — 의도된 트레이드오프.
+    entries = RuleExtractor().extract("2024년 3월 1일 금요일\n[민수] [오후 9:12] 안녕")
+
+    assert len(entries) == 1
+    assert entries[0].ts == "2024년 3월 1일 오후 9:12"
+
+
+def test_time_comma_plain_sentence_not_structured() -> None:
+    # PR #22 리뷰 #2: 시각+콤마 뒤 공백 든 어구는 화자가 아니다.
+    entries = RuleExtractor().extract("오후 3:00, 근데 말이야: 밥 먹자")
+
+    assert entries == [
+        ExtractedEntry(text="오후 3:00, 근데 말이야: 밥 먹자", order=0, source="plain")
+    ]
+
+
 def test_dotted_date_with_spaces_parses() -> None:  # 사용자 리뷰 #2 (맥 내보내기류)
     entries = RuleExtractor().extract("2024. 5. 1. 오후 3:21, 민수 : 안녕")
 

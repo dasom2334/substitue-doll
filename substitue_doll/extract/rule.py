@@ -26,18 +26,32 @@ DATE_PATTERN = (
 TIME_PATTERN = r"(?:(?:오전|오후)[ ]?)?\d{1,2}:\d{2}(?:[ ]?[AaPp][Mm])?"
 _TS = rf"(?:{DATE_PATTERN})(?:[ ]+{TIME_PATTERN})?"
 
-# 날짜 구분선: 줄 전체가 (장식 +) 날짜 (+ 요일/장식) — 발화가 아닌 메타데이터.
+# 날짜 구분선 후보: 줄 전체가 (장식 +) 날짜 (+ 요일/장식). 단 **순수 날짜만 있는 줄은
+# 구분선이 아니다** — 사용자가 날짜를 감정 앵커로 회상한 평문일 수 있어 보존해야 한다
+# (§4 사건·감정, PR #22 리뷰 #1). 구분선 확정은 is_date_separator()가 장식/요일을 요구.
 DATE_SEPARATOR = re.compile(
-    rf"^[-=~ ]*(?P<date>{DATE_PATTERN})[ ]?(?:[월화수목금토일]요일)?[-=~ ]*$"
+    rf"^(?P<lead>[-=~ ]*)(?P<date>{DATE_PATTERN})[ ]?"
+    rf"(?P<weekday>[월화수목금토일]요일)?(?P<trail>[-=~ ]*)$"
 )
+
+
+def is_date_separator(match: re.Match[str] | None) -> bool:
+    """구분선 판정 — 양성 증거(장식 문자 또는 요일) 최소 1개를 요구한다."""
+    if match is None:
+        return False
+    has_decoration = any(ch in "-=~" for ch in match["lead"] + match["trail"])
+    return bool(match["weekday"]) or has_decoration
+
 
 # 1) "날짜(+시각), 화자 : 텍스트"
 _TS_SPEAKER = re.compile(
     rf"^(?P<ts>{_TS})[ ]*,[ ]*(?P<speaker>[^:,]{{1,30}}?)[ ]*:[ ]*(?P<text>.+)$"
 )
-# 1b) "시각, 화자 : 텍스트" — 날짜는 구분선 상태에서 보충
+# 1b) "시각, 화자 : 텍스트" — 날짜는 구분선 상태에서 보충. 시각+콤마는 날짜+콤마보다
+#     증거가 약하므로 화자에 공백 불허(_SIMPLE과 동일 방어) — "오후 3:00, 근데 말이야: …"
+#     평문 오인 방지 (PR #22 리뷰 #2). 공백 이름은 폴백(시각 반복 신호)이 받는다.
 _TIME_SPEAKER = re.compile(
-    rf"^(?P<ts>{TIME_PATTERN})[ ]*,[ ]*(?P<speaker>[^:,]{{1,30}}?)[ ]*:[ ]*(?P<text>.+)$"
+    rf"^(?P<ts>{TIME_PATTERN})[ ]*,[ ]*(?P<speaker>[^\s:,/]{{1,30}}?)[ ]*:[ ]*(?P<text>.+)$"
 )
 # 2) "[화자] ..." — 뒤에 [시각] / 타임스탬프 / 본문
 _BRACKET = re.compile(r"^\[(?P<speaker>[^\]]{1,30})\][ ]*(?P<rest>.+)$")
@@ -74,7 +88,8 @@ class RuleExtractor:
                 flush_plain()  # 빈 줄 = 구간 분리
                 continue
             separator = DATE_SEPARATOR.match(line)
-            if separator:
+            if is_date_separator(separator):
+                assert separator is not None  # is_date_separator가 보장
                 flush_plain()
                 current_date = separator["date"].strip()
                 continue  # 구분선은 발화가 아니다 — 날짜 상태로만 반영
