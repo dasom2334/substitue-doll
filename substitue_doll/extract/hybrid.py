@@ -14,15 +14,16 @@ import re
 from dataclasses import replace
 
 from substitue_doll.core.extraction import ExtractedEntry, Extractor
-from substitue_doll.extract.rule import RuleExtractor
+from substitue_doll.extract.rule import DATE_PATTERN, DATE_SEPARATOR, TIME_PATTERN, RuleExtractor
 
-# 구조 신호는 "줄이 로그 형태인가"로 판정한다: 줄머리 대괄호 라벨, 또는 **줄머리** 날짜가
-# 시각(오전/오후·AM/PM)이나 구분자(| ,)와 동반될 때만. 날짜가 문장 속에만 있는 평문 회고
-# ("2024.3.1 그날 힘들었다")는 신호가 아니다 — 불필요한 LLM 호출(비용) 방지 (PR #13 리뷰 #1).
-# 다국어/낯선 포맷의 실제 파싱은 폴백(LLM)의 몫이고, 신호는 언어 무관 패턴(숫자·구분자)으로 잡는다.
-_DATE = r"\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}"
-_TIME = r"(?:(?:오전|오후)[ ]?)?\d{1,2}:\d{2}(?:[ ]?[AaPp][Mm])?"
-_SIGNAL = re.compile(rf"^\[[^\]]{{1,30}}\]|^{_DATE}(?:[ ]+{_TIME}|[ ]*[|,])")
+# 구조 신호는 "구간이 로그 형태인가"로 판정한다(패턴은 rule.py와 공유 — 이중 관리 방지):
+# ① 줄머리 대괄호 라벨, 또는 줄머리 날짜가 시각/구분자(| ,)와 동반 (줄 단위)
+# ② 날짜 구분선 존재, 또는 **시각 패턴이 2줄 이상 반복** (구간 단위 — 날짜 없이 시각만
+#    찍히는 실제 메신저 내보내기의 사각지대 해소; 사용자 리뷰 #4 "이중 사각지대")
+# 날짜/시각이 문장 속에 한 번 있는 평문 회고는 여전히 신호가 아니다 — LLM 비용 방지
+# (PR #13 리뷰 #1). 낯선 포맷의 실제 파싱은 폴백(LLM)의 몫이다.
+_SIGNAL = re.compile(rf"^\[[^\]]{{1,30}}\]|^(?:{DATE_PATTERN})(?:[ ]+{TIME_PATTERN}|[ ]*[|,])")
+_TIME_HINT = re.compile(TIME_PATTERN)
 
 
 def _split_segments(text: str) -> list[str]:
@@ -62,8 +63,18 @@ class HybridExtractor:
         return merged
 
     def _needs_fallback(self, segment: str, entries: list[ExtractedEntry]) -> bool:
-        lines = [line for line in segment.splitlines() if line.strip()]
-        if not lines or not any(_SIGNAL.search(line) for line in lines):
+        lines = [line.strip() for line in segment.splitlines() if line.strip()]
+        # 날짜 구분선은 발화가 아니므로 커버리지 분모에서 제외한다(전부 파싱된 구간이
+        # 구분선 때문에 임계 미달로 보이는 오탐 방지).
+        content_lines = [line for line in lines if not DATE_SEPARATOR.match(line)]
+        if not content_lines:
+            return False
+        has_signal = (
+            any(_SIGNAL.search(line) for line in lines)
+            or len(content_lines) < len(lines)  # 날짜 구분선 존재
+            or sum(1 for line in content_lines if _TIME_HINT.search(line)) >= 2  # 시각 반복
+        )
+        if not has_signal:
             return False  # 구조 신호 없음 → 평문으로 취급, 폴백 안 함
         structured = sum(1 for e in entries if e.source == "structured")
-        return structured / len(lines) < self._threshold
+        return structured / len(content_lines) < self._threshold
