@@ -79,6 +79,38 @@ def test_colon_sentence_not_mistaken_as_structured() -> None:
     assert entries == [ExtractedEntry(text="오늘은 정말: 힘든 하루였어", order=0, source="plain")]
 
 
+KAKAO_LIKE = """--------------- 2024년 3월 1일 금요일 ---------------
+[민수] [오후 9:12] 오늘 힘들었어
+오후 9:15, 지영 : 헐 왜"""
+
+
+def test_date_separator_state_attaches_date(  # 사용자 리뷰 #2·#3
+) -> None:
+    entries = RuleExtractor().extract(KAKAO_LIKE)
+
+    assert len(entries) == 2  # 구분선은 발화가 아니다
+    assert entries[0].speaker == "민수"
+    assert entries[0].ts == "2024년 3월 1일 오후 9:12"  # 구분선 날짜가 시각에 보충됨
+    assert entries[0].text == "오늘 힘들었어"  # [오후 9:12]가 본문에 남지 않음
+    assert entries[1].speaker == "지영"
+    assert entries[1].ts == "2024년 3월 1일 오후 9:15"
+
+
+def test_dotted_date_with_spaces_parses() -> None:  # 사용자 리뷰 #2 (맥 내보내기류)
+    entries = RuleExtractor().extract("2024. 5. 1. 오후 3:21, 민수 : 안녕")
+
+    assert entries[0].speaker == "민수"
+    assert entries[0].ts == "2024. 5. 1. 오후 3:21"
+    assert entries[0].text == "안녕"
+
+
+def test_simple_colon_leading_ts_extracted() -> None:  # 사용자 리뷰 #6
+    entries = RuleExtractor().extract("민수: 2024.3.1 오후 9:12 안녕")
+
+    assert entries[0].ts == "2024.3.1 오후 9:12"  # 날짜가 본문에 묻히지 않는다
+    assert entries[0].text == "안녕"
+
+
 def test_long_whitespace_line_no_redos() -> None:
     # ReDoS 회귀 방지: 긴 공백 줄도 선형 시간에 처리되고 평문으로 분류된다.
     import time
