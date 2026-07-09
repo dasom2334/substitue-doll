@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from collections.abc import MutableMapping
 from pathlib import Path
 
 from substitue_doll.core.embedding import Embedder
@@ -45,20 +46,30 @@ from substitue_doll.store.sqlite_vector_index import SqliteVectorIndex
 DEFAULT_DB = Path("data") / "substitue.db"  # 리포 루트 실행 전제 — 모듈 docstring 참조
 
 
-def _load_dotenv(path: Path = Path(".env")) -> None:
+def _load_dotenv(path: Path = Path(".env"), env: MutableMapping[str, str] = os.environ) -> None:
     """`.env`를 환경변수로 로드한다 — 이미 설정된 변수는 유지(실제 환경이 우선).
 
-    외부 의존 없이 `KEY=VALUE` 줄만 지원한다(따옴표·변수 확장 미지원).
-    설정 로드는 껍데기의 몫이고, 코드는 env를 읽기만 한다(§3·§8).
+    외부 의존 없이 `KEY=VALUE` 줄만 지원한다(따옴표·변수 확장·`export` 접두 미지원 —
+    env.example 참조). env를 주입 가능하게 둔 것은 테스트가 전역을 오염시키지 않기
+    위함(PR #20 리뷰). 설정 로드는 껍데기의 몫이다(§3·§8).
     """
     if not path.is_file():
         return
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
+    try:
+        content = path.read_text(encoding="utf-8-sig")  # -sig: BOM 자동 제거
+    except (OSError, UnicodeDecodeError) as exc:
+        # 부수 편의 기능의 실패가 CLI 전체를 막으면 안 된다 — 경고 후 실제 env로 진행.
+        print(f".env를 읽지 못해 건너뜁니다: {exc}", file=sys.stderr)
+        return
+    for raw_line in content.splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip())
+        key = key.strip()
+        if not key or " " in key:  # "export KEY=V" 등 오파싱 방지 — 조용히 스킵
+            continue
+        env.setdefault(key, value.strip())
 
 
 def _make_embedder() -> Embedder:
