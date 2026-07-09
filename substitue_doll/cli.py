@@ -27,6 +27,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -42,6 +43,22 @@ from substitue_doll.store.sqlite_repository import SqliteRepository
 from substitue_doll.store.sqlite_vector_index import SqliteVectorIndex
 
 DEFAULT_DB = Path("data") / "substitue.db"  # 리포 루트 실행 전제 — 모듈 docstring 참조
+
+
+def _load_dotenv(path: Path = Path(".env")) -> None:
+    """`.env`를 환경변수로 로드한다 — 이미 설정된 변수는 유지(실제 환경이 우선).
+
+    외부 의존 없이 `KEY=VALUE` 줄만 지원한다(따옴표·변수 확장 미지원).
+    설정 로드는 껍데기의 몫이고, 코드는 env를 읽기만 한다(§3·§8).
+    """
+    if not path.is_file():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip())
 
 
 def _make_embedder() -> Embedder:
@@ -235,6 +252,7 @@ def _cmd_eval(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _load_dotenv()
     parser = argparse.ArgumentParser(prog="substitue-doll")
     subparsers = parser.add_subparsers(dest="command", required=True)
 

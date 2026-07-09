@@ -91,6 +91,10 @@ python -m substitue_doll.cli eval 상황목록.txt         # MVP 평가(PLAN §5
 > ⚠️ macOS에서 Docker 컨테이너는 Metal GPU를 쓰지 못해 CPU 추론이라 느리다(생성당 수 분).
 > 이식성을 우선한 결정 — 속도가 필요하면 네이티브 Ollama를 띄우고 `.env`의 URL만 바꾸면 된다.
 
+> 참고: 임베딩 **모델 파일**은 최초 1회 Hugging Face에서 내려받는다(대화 텍스트는 전송 안 됨,
+> 익명 경고는 무해). 캐시된 뒤엔 `.env`의 `HF_HUB_OFFLINE=1`로 HF 접속을 완전히 끊을 수 있다
+> (`0`=온라인 기본 — 두 값의 의미는 `env.example` 주석 참조).
+
 개발 품질 게이트 (커밋 전 전부 통과 필수, pre-commit이 강제):
 
 ```bash
