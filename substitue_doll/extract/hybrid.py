@@ -77,12 +77,10 @@ class HybridExtractor:
         ]
         if not content_lines:
             return False
-        has_signal = (
-            any(_SIGNAL.search(line) for line in lines)
-            or len(content_lines) < len(lines)  # 날짜 구분선 존재
-            or sum(1 for line in content_lines if _TIME_HINT.search(line)) >= 2  # 시각 반복
-        )
-        if not has_signal:
+        has_leading_signal = any(_SIGNAL.search(line) for line in lines)
+        has_date_separator = len(content_lines) < len(lines)  # 구분선이 걸러졌다는 흔적
+        time_repeats = sum(1 for line in content_lines if _TIME_HINT.search(line)) >= 2
+        if not (has_leading_signal or has_date_separator or time_repeats):
             return False  # 구조 신호 없음 → 평문으로 취급, 폴백 안 함
         structured = sum(1 for e in entries if e.source == "structured")
         return structured / len(content_lines) < self._threshold

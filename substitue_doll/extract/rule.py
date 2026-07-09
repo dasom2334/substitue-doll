@@ -56,7 +56,9 @@ _TIME_SPEAKER = re.compile(
 # 2) "[화자] ..." — 뒤에 [시각] / 타임스탬프 / 본문
 _BRACKET = re.compile(r"^\[(?P<speaker>[^\]]{1,30})\][ ]*(?P<rest>.+)$")
 _BRACKET_TIME = re.compile(rf"^\[(?P<ts>{TIME_PATTERN})\][ ]*(?P<text>.+)$")
-# "타임스탬프(날짜/시각) + 본문" — 브래킷 뒤·콜론 뒤 텍스트에서 ts 분리용
+# "타임스탬프 + 본문" — 브래킷 뒤·콜론 뒤 텍스트에서 ts 분리용.
+# `_TS|TIME` 교대인 이유: _TS는 날짜가 필수(시각은 옵션)라 **날짜 없는 순수 시각**을
+# 못 잡는다 — 뒤의 TIME_PATTERN 대안이 그 경우를 받는다(왼쪽 우선이라 겹침 무해).
 _LEADING_TS = re.compile(rf"^(?P<ts>{_TS}|{TIME_PATTERN})[ ]+(?P<text>.+)$")
 # 3) "화자: 텍스트" (단순). speaker에 공백 불허 + 콜론 뒤 `/` 차단 →
 #    "오늘은 정말: ..."(평문 문장)·"http://..."(URL) 오매칭 방지.
@@ -65,6 +67,13 @@ _SIMPLE = re.compile(r"^(?P<speaker>[^\s:/]{1,20})[ ]*:[ ]*(?!/)(?P<text>.+)$")
 
 def _has_date(ts: str) -> bool:
     return re.search(DATE_PATTERN, ts) is not None
+
+
+def _attach_date(ts: str | None, current_date: str | None) -> str | None:
+    """시각만 있는 ts에 구분선의 날짜를 보충한다(이미 날짜가 있으면 그대로)."""
+    if ts is None or current_date is None or _has_date(ts):
+        return ts
+    return f"{current_date} {ts}"
 
 
 class RuleExtractor:
@@ -99,15 +108,13 @@ class RuleExtractor:
                 continue
             flush_plain()
             speaker, ts, body = parsed
-            if ts is not None and current_date is not None and not _has_date(ts):
-                ts = f"{current_date} {ts}"  # 구분선의 날짜를 시각에 보충
             entries.append(
                 ExtractedEntry(
                     text=body,
                     order=len(entries),
                     source="structured",
                     speaker=speaker,
-                    ts=ts,
+                    ts=_attach_date(ts, current_date),
                 )
             )
         flush_plain()
@@ -115,7 +122,11 @@ class RuleExtractor:
 
     @staticmethod
     def _parse_structured(line: str) -> tuple[str, str | None, str] | None:
-        """구조 줄이면 (speaker, ts, text), 아니면 None."""
+        """구조 줄이면 (speaker, ts, text), 아니면 None.
+
+        ⚠️ 시도 순서는 **특이성 내림차순 계약**이다(날짜+시각 → 시각 → 브래킷 → 단순 콜론).
+        순서를 바꾸면 약한 패턴이 강한 증거의 줄을 선점해 ts/화자 정보가 손실된다.
+        """
         for pattern in (_TS_SPEAKER, _TIME_SPEAKER):
             m = pattern.match(line)
             if m:
