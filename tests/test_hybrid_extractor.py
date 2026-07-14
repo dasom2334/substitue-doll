@@ -86,6 +86,53 @@ def test_english_log_format_triggers_fallback() -> None:
     assert entries[0].speaker == "John"
 
 
+def test_time_only_log_triggers_fallback() -> None:
+    # 사용자 리뷰 #4 "이중 사각지대": 날짜 없이 시각만 반복되는 로그가
+    # 룰도 못 뜯고 폴백 신호에도 안 걸리면 안 된다 — 시각 2줄 반복 = 신호.
+    fallback = FakeFallback(
+        [ExtractedEntry(text="안녕", order=0, source="structured", speaker="민수", ts="9:12")]
+    )
+    segment = "9:12 민수 안녕\n9:13 지영 반가워"
+    entries = HybridExtractor(fallback).extract(segment)
+
+    assert fallback.calls == [segment]  # 안전망(LLM) 작동
+    assert entries[0].speaker == "민수"
+
+
+def test_single_time_in_prose_no_fallback() -> None:
+    # 평문 속 시각 1회는 여전히 신호가 아니다 — LLM 비용 방지 유지.
+    fallback = FakeFallback()
+    entries = HybridExtractor(fallback).extract("우리 오후 3:00에 만나기로 했다\n기대된다")
+
+    assert fallback.calls == []
+    assert entries[0].source == "plain"
+
+
+def test_time_repeated_prose_may_call_fallback_but_keeps_plain() -> None:
+    # PR #22 리뷰 #3(의도된 트레이드오프): 시각 2회 이상 회고 평문은 폴백을 부를 수 있다
+    # (사각지대 해소의 비용). 단 폴백이 빈 결과면 룰의 평문 결과가 유지돼 손상은 없다.
+    fallback = FakeFallback()  # 빈 결과 = 폴백 실패/판단 보류
+    entries = HybridExtractor(fallback).extract("3:00에 만났고\n5:30에 헤어졌지\n좋은 하루였다")
+
+    assert len(fallback.calls) == 1  # LLM 비용 1회 — 허용된 오탐
+    assert all(e.source == "plain" for e in entries)  # 데이터 손상 없음
+
+
+def test_fully_parsed_kakao_segment_skips_fallback() -> None:
+    # 날짜 구분선은 커버리지 분모에서 제외 — 전부 파싱된 구간이 구분선 때문에
+    # 임계 미달로 보여 불필요한 LLM을 부르면 안 된다.
+    fallback = FakeFallback()
+    segment = (
+        "--------------- 2024년 3월 1일 금요일 ---------------\n"
+        "[민수] [오후 9:12] 안녕\n"
+        "오후 9:13, 지영 : 반가워"
+    )
+    entries = HybridExtractor(fallback).extract(segment)
+
+    assert fallback.calls == []
+    assert [e.speaker for e in entries] == ["민수", "지영"]
+
+
 def test_mixed_segments_only_uncertain_goes_to_llm_and_order_is_global() -> None:
     fallback = FakeFallback(
         [ExtractedEntry(text="안녕", order=0, source="structured", speaker="나", ts=None)]
