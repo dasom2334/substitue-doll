@@ -105,3 +105,57 @@ def test_search_empty_db_is_success(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     exit_code = main(["search", "아무거나", "--db", str(tmp_path / "빈.db")])
 
     assert exit_code == 0  # 결과 없음은 오류가 아니다
+
+
+class _FakeLlm:
+    def complete(self, prompt: str) -> str:
+        return "그랬구나, 고생 많았어"
+
+
+def _setup_indexed_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setattr("substitue_doll.cli._make_embedder", lambda: _KeywordEmbedder())
+    monkeypatch.setattr("substitue_doll.cli._make_llm", lambda: _FakeLlm())
+    input_path = _write_input(tmp_path, "[나] 오늘 우울해\n[상대] 여행 가자")
+    db = tmp_path / "store.db"
+    assert main(["ingest", str(input_path), "--db", str(db)]) == 0
+    assert main(["index", "--db", str(db)]) == 0
+    return db
+
+
+def test_reply_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    db = _setup_indexed_db(tmp_path, monkeypatch)
+
+    assert main(["reply", "요즘 우울해 보여", "--db", str(db), "-k", "1"]) == 0
+
+
+def test_reply_without_provider_fails_cleanly(tmp_path: Path) -> None:
+    # LLM 제공자 미설정(현 상태) — 트레이스백 없이 안내 + exit 1 (Issue #12 게이트).
+    exit_code = main(["reply", "아무 상황", "--db", str(tmp_path / "s.db")])
+
+    assert exit_code == 1
+
+
+def test_eval_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    db = _setup_indexed_db(tmp_path, monkeypatch)
+    situations = tmp_path / "situations.txt"
+    situations.write_text("친구가 우울하다고 한다\n\n놀러 가자고 한다\n", encoding="utf-8")
+
+    assert main(["eval", str(situations), "--db", str(db), "-k", "1"]) == 0
+
+
+def test_eval_empty_situations_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    db = _setup_indexed_db(tmp_path, monkeypatch)
+    situations = tmp_path / "situations.txt"
+    situations.write_text("\n\n", encoding="utf-8")
+
+    assert main(["eval", str(situations), "--db", str(db)]) == 1
+
+
+def test_non_utf8_input_fails_cleanly(tmp_path: Path) -> None:
+    # PR #18 리뷰 #2: UnicodeDecodeError도 트레이스백 없이 메시지+exit 1.
+    bad = tmp_path / "bad.txt"
+    bad.write_bytes(b"\xff\xfe\x00\x01")
+    db = str(tmp_path / "s.db")
+
+    assert main(["ingest", str(bad), "--db", db]) == 1
+    assert main(["eval", str(bad), "--db", db]) == 1
