@@ -17,7 +17,11 @@ from substitue_doll.core.repository import Repository
 
 
 class VectorIndex(Protocol):
-    """벡터 인덱스 포트 — (레코드 id, 벡터) 저장과 top-k 검색."""
+    """벡터 인덱스 포트 — (레코드 id, 벡터) 저장과 top-k 검색.
+
+    배치 기준(모드1 종합 리뷰): 여러 엔진이 공유하는 포트(Repository·Embedder·LlmClient)는
+    core 안 별도 파일, 이 포트처럼 **한 엔진 전용 협력 포트는 그 엔진 파일에 인라인**한다.
+    """
 
     def add_many(self, items: list[tuple[int, list[float]]]) -> None:
         """(record_id, vector) 목록을 적재한다."""

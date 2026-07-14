@@ -27,7 +27,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+from collections.abc import MutableMapping
 from pathlib import Path
 
 from substitue_doll.core.embedding import Embedder
@@ -42,6 +44,32 @@ from substitue_doll.store.sqlite_repository import SqliteRepository
 from substitue_doll.store.sqlite_vector_index import SqliteVectorIndex
 
 DEFAULT_DB = Path("data") / "substitue.db"  # 리포 루트 실행 전제 — 모듈 docstring 참조
+
+
+def _load_dotenv(path: Path = Path(".env"), env: MutableMapping[str, str] = os.environ) -> None:
+    """`.env`를 환경변수로 로드한다 — 이미 설정된 변수는 유지(실제 환경이 우선).
+
+    외부 의존 없이 `KEY=VALUE` 줄만 지원한다(따옴표·변수 확장·`export` 접두 미지원 —
+    env.example 참조). env를 주입 가능하게 둔 것은 테스트가 전역을 오염시키지 않기
+    위함(PR #20 리뷰). 설정 로드는 껍데기의 몫이다(§3·§8).
+    """
+    if not path.is_file():
+        return
+    try:
+        content = path.read_text(encoding="utf-8-sig")  # -sig: BOM 자동 제거
+    except (OSError, UnicodeDecodeError) as exc:
+        # 부수 편의 기능의 실패가 CLI 전체를 막으면 안 된다 — 경고 후 실제 env로 진행.
+        print(f".env를 읽지 못해 건너뜁니다: {exc}", file=sys.stderr)
+        return
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        if not key or " " in key:  # "export KEY=V" 등 오파싱 방지 — 조용히 스킵
+            continue
+        env.setdefault(key, value.strip())
 
 
 def _make_embedder() -> Embedder:
@@ -67,7 +95,10 @@ def _confirm_me(candidates: tuple[str, ...]) -> str | None:
     print("'나'를 판별하지 못했습니다. 본인 라벨을 골라주세요:")
     for i, candidate in enumerate(candidates, start=1):
         print(f"  {i}. {candidate}")
-    answer = input("번호 또는 라벨 입력: ").strip()
+    try:
+        answer = input("번호 또는 라벨 입력: ").strip()
+    except EOFError:  # 비대화형(stdin 닫힘) — 트레이스백 없이 중단 경로로 (라이브 테스트 발견)
+        return None
     if answer.isdigit() and 1 <= int(answer) <= len(candidates):
         return candidates[int(answer) - 1]
     if answer in candidates:
@@ -232,6 +263,7 @@ def _cmd_eval(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _load_dotenv()
     parser = argparse.ArgumentParser(prog="substitue-doll")
     subparsers = parser.add_subparsers(dest="command", required=True)
 

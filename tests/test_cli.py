@@ -39,6 +39,25 @@ def test_ingest_confirms_interactively(tmp_path: Path, monkeypatch: pytest.Monke
         assert [r.speaker for r in repo.load_all()] == ["나", "영희"]
 
 
+def test_ingest_confirmation_eof_aborts_cleanly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 라이브 테스트 발견: 비대화형 stdin(EOF)에서 확인 질문이 트레이스백으로 죽으면 안 된다.
+    input_path = _write_input(tmp_path, "[철수] 안녕\n[영희] 오랜만")
+    db = tmp_path / "store.db"
+
+    def raise_eof(_prompt: str) -> str:
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", raise_eof)
+
+    exit_code = main(["ingest", str(input_path), "--db", str(db)])
+
+    assert exit_code == 1
+    with SqliteRepository(db) as repo:
+        assert repo.count() == 0
+
+
 def test_ingest_unknown_choice_aborts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     input_path = _write_input(tmp_path, "[철수] 안녕\n[영희] 오랜만")
     db = tmp_path / "store.db"
