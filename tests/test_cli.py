@@ -128,11 +128,57 @@ def test_reply_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert main(["reply", "요즘 우울해 보여", "--db", str(db), "-k", "1"]) == 0
 
 
-def test_reply_without_provider_fails_cleanly(tmp_path: Path) -> None:
-    # LLM 제공자 미설정(현 상태) — 트레이스백 없이 안내 + exit 1 (Issue #12 게이트).
+def test_reply_provider_unreachable_fails_cleanly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Ollama 서버 도달 불가 시 트레이스백 없이 메시지 + exit 1 (PR #18 리뷰 — 게이트 해제 필수).
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://127.0.0.1:9")  # 닫힌 포트 — 즉시 거부
+    monkeypatch.setattr("substitue_doll.cli._make_embedder", lambda: _KeywordEmbedder())
+
     exit_code = main(["reply", "아무 상황", "--db", str(tmp_path / "s.db")])
 
     assert exit_code == 1
+
+
+class _BoomLlm:
+    def complete(self, prompt: str) -> str:
+        raise RuntimeError("rate limited")
+
+
+def test_eval_partial_failure_continues(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # PR #18 리뷰: 한 상황 실패가 배치 전체를 죽이지 않는다.
+    class FlakyLlm:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def complete(self, prompt: str) -> str:
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("일시 실패")
+            return "괜찮아, 같이 있어줄게"
+
+    db = _setup_indexed_db(tmp_path, monkeypatch)
+    monkeypatch.setattr("substitue_doll.cli._make_llm", lambda: FlakyLlm())
+    situations = tmp_path / "situations.txt"
+    situations.write_text("첫 상황\n둘째 상황\n", encoding="utf-8")
+
+    exit_code = main(["eval", str(situations), "--db", str(db), "-k", "1"])
+
+    out = capsys.readouterr().out
+    assert exit_code == 0  # 일부 성공 → 정상
+    assert "생성 실패" in out
+    assert "괜찮아, 같이 있어줄게" in out
+
+
+def test_eval_all_failures_exit_1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    db = _setup_indexed_db(tmp_path, monkeypatch)
+    monkeypatch.setattr("substitue_doll.cli._make_llm", lambda: _BoomLlm())
+    situations = tmp_path / "situations.txt"
+    situations.write_text("상황 하나\n", encoding="utf-8")
+
+    assert main(["eval", str(situations), "--db", str(db)]) == 1
 
 
 def test_eval_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

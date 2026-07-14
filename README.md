@@ -66,18 +66,32 @@ PLAN.md                 # 로드맵
 CLAUDE.md               # 개발 실행 규칙
 ```
 
-## 개발
+## 시작하기 (clone만 받으면 실행)
 
-요구: Python 3.10+
+요구: Python 3.10+, Docker
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-pre-commit install
+# 1) 파이썬 환경
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev,embed]"   # embed = 로컬 임베딩(sentence-transformers)
+
+# 2) 로컬 LLM (Ollama, Docker) — 데이터가 외부로 나가지 않는다
+cp env.example .env
+docker compose up -d
+docker compose exec ollama ollama pull qwen2.5:7b   # 최초 1회 (모델 교체는 .env의 LLM_MODEL)
+
+# 3) 사용 (합성/더미 데이터만 — 정제 실체화 전 실데이터 금지)
+python -m substitue_doll.cli ingest 대화파일.txt      # 인입 (자유 형식)
+python -m substitue_doll.cli index                    # 임베딩 인덱스 구축
+python -m substitue_doll.cli search "질의"            # 의미 검색 확인
+python -m substitue_doll.cli reply "상대가 보낸 말"    # '나' 말투 답장 초안
+python -m substitue_doll.cli eval 상황목록.txt         # MVP 평가(PLAN §5)
 ```
 
-품질 게이트 (커밋 전 전부 통과 필수, pre-commit이 강제):
+> ⚠️ macOS에서 Docker 컨테이너는 Metal GPU를 쓰지 못해 CPU 추론이라 느리다(생성당 수 분).
+> 이식성을 우선한 결정 — 속도가 필요하면 네이티브 Ollama를 띄우고 `.env`의 URL만 바꾸면 된다.
+
+개발 품질 게이트 (커밋 전 전부 통과 필수, pre-commit이 강제):
 
 ```bash
 ruff check . && ruff format --check .
@@ -94,7 +108,10 @@ pytest
 ## 진행 상황
 
 - ✅ 0단계: 개발 게이트(ruff/mypy/pytest + pre-commit), CI, 브랜치 보호, 정제 스텁
-- 🚧 1단계(모드1 인입): 1A 정제물 스키마 + SQLite 저장소 — 진행 중
+- ✅ 1단계(모드1 인입): 저장소 · 구조 추출(룰+LLM 폴백) · 화자 식별 · `ingest` CLI
+- ✅ 2단계(검색): 로컬 임베딩 + 벡터 인덱스 + `search`
+- ✅ 3단계(생성): `reply`/`eval` + 로컬 Ollama 연결 — **모드1 MVP 평가 중**(품질 튜닝 단계)
+- ⏭️ 4단계: 정제 실체화(그 전까지 실데이터 투입 금지)
 
 ---
 

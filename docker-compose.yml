@@ -1,0 +1,19 @@
+# 로컬 LLM(Ollama) — "git clone만 받아도 실행" (Issue #12 PR-6).
+#
+# 사용:
+#   docker compose up -d
+#   docker compose exec ollama ollama pull qwen2.5:7b   # 최초 1회(모델은 volume에 캐시)
+#
+# 모델 변경: .env의 LLM_MODEL 수정 후 해당 모델 pull.
+# 주의: macOS에서 컨테이너는 Metal GPU를 쓰지 못해 CPU 추론(느림) — 이식성 우선 결정.
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "127.0.0.1:11434:11434"  # 루프백만 — 같은 네트워크 기기 노출 방지(프라이버시 정합)
+    volumes:
+      - ollama-models:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  ollama-models:
