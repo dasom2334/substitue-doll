@@ -80,3 +80,28 @@ def test_ingest_missing_file_fails_cleanly(tmp_path: Path) -> None:
     exit_code = main(["ingest", str(tmp_path / "없음.txt"), "--db", str(tmp_path / "s.db")])
 
     assert exit_code == 1
+
+
+class _KeywordEmbedder:
+    """테스트용 임베더 — '우울' 포함 여부를 축으로 쓰는 결정적 2차원 벡터."""
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return [[1.0, 0.0] if "우울" in t else [0.0, 1.0] for t in texts]
+
+
+def test_index_and_search_commands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # 무거운 실모델 대신 팩토리를 가짜로 바꿔 CLI 경로만 검증 (2단계).
+    monkeypatch.setattr("substitue_doll.cli._make_embedder", lambda: _KeywordEmbedder())
+    input_path = _write_input(tmp_path, "[나] 오늘 우울해\n[상대] 여행 가자")
+    db = tmp_path / "store.db"
+    assert main(["ingest", str(input_path), "--db", str(db)]) == 0
+
+    assert main(["index", "--db", str(db)]) == 0
+    assert main(["search", "우울한 하루", "--db", str(db), "-k", "1"]) == 0
+
+
+def test_search_empty_db_is_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("substitue_doll.cli._make_embedder", lambda: _KeywordEmbedder())
+    exit_code = main(["search", "아무거나", "--db", str(tmp_path / "빈.db")])
+
+    assert exit_code == 0  # 결과 없음은 오류가 아니다

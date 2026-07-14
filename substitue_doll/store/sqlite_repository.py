@@ -54,22 +54,40 @@ class SqliteRepository:
 
     def load_all(self) -> list[RefinedRecord]:
         cursor = self._conn.execute(f"SELECT {_COLUMNS} FROM refined_records ORDER BY id")
-        return [
-            RefinedRecord(
-                speaker=row["speaker"],
-                text=row["text"],
-                order=row["ord"],
-                source=row["source"],
-                ts=row["ts"],
-                event=row["event"],
-                emotion=row["emotion"],
+        return [self._to_record(row) for row in cursor.fetchall()]
+
+    def load_all_with_ids(self) -> list[tuple[int, RefinedRecord]]:
+        cursor = self._conn.execute(f"SELECT id, {_COLUMNS} FROM refined_records ORDER BY id")
+        return [(int(row["id"]), self._to_record(row)) for row in cursor.fetchall()]
+
+    def load_by_ids(self, ids: list[int]) -> list[RefinedRecord]:
+        by_id: dict[int, RefinedRecord] = {}
+        # SQLite 변수 한도(기본 999) 방어: id를 청크로 나눠 조회한다 (PR #17 리뷰 #3).
+        for start in range(0, len(ids), 500):
+            chunk = ids[start : start + 500]
+            placeholders = ", ".join("?" for _ in chunk)
+            cursor = self._conn.execute(
+                f"SELECT id, {_COLUMNS} FROM refined_records WHERE id IN ({placeholders})", chunk
             )
-            for row in cursor.fetchall()
-        ]
+            by_id.update({int(row["id"]): self._to_record(row) for row in cursor.fetchall()})
+        # SQL IN은 순서를 보장하지 않으므로 입력 id 순서(=유사도 랭킹)를 여기서 복원한다.
+        return [by_id[record_id] for record_id in ids if record_id in by_id]
 
     def count(self) -> int:
         row = self._conn.execute("SELECT COUNT(*) AS n FROM refined_records").fetchone()
         return int(row["n"])
+
+    @staticmethod
+    def _to_record(row: sqlite3.Row) -> RefinedRecord:
+        return RefinedRecord(
+            speaker=row["speaker"],
+            text=row["text"],
+            order=row["ord"],
+            source=row["source"],
+            ts=row["ts"],
+            event=row["event"],
+            emotion=row["emotion"],
+        )
 
     def close(self) -> None:
         self._conn.close()
